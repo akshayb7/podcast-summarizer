@@ -22,7 +22,7 @@ corise_image = (
         "ffmpeg",
         "openai",
         "tiktoken",
-        "wikipedia",
+        "spotipy",
         "ffmpeg-python",
     )
     .apt_install("ffmpeg")
@@ -148,22 +148,63 @@ def get_podcast_info(podcast_transcript):
     return podcastInfo
 
 
+@stub.function(image=corise_image, secret=modal.Secret.from_name("spotify_api_secret"))
+def get_artist_profiles(artists_discussed):
+    import os
+    import spotipy
+    from spotipy.oauth2 import SpotifyClientCredentials
+
+    CLIENT_ID = os.environ["spotify_client_id"]
+    CLIENT_SECRET = os.environ["spotify_client_secret"]
+    artist_profiles = {}
+
+    # Authenticate with Spotify API
+    auth_manager = SpotifyClientCredentials(
+        client_id=CLIENT_ID, client_secret=CLIENT_SECRET
+    )
+    sp = spotipy.Spotify(auth_manager=auth_manager)
+
+    for artist in artists_discussed.keys():
+        results = sp.search(q=artist, type="artist", limit=1)
+        if results["artists"]["items"]:
+            artist_info = results["artists"]["items"][0]
+            artist_profiles[artist] = artist_info["external_urls"]["spotify"]
+
+    return artist_profiles
+
+
 @stub.function(
-    image=corise_image, secret=modal.Secret.from_name("my-openai-secret"), timeout=1200
+    image=corise_image,
+    secrets=[
+        modal.Secret.from_name("my-openai-secret"),
+        modal.Secret.from_name("spotify_api_secret"),
+    ],
+    timeout=1200,
 )
 def process_podcast(url, path):
+    import json
+
     output = {}
     podcast_details = get_transcribe_podcast.call(url, path)
-    podcast_info = get_podcast_info.call(podcast_details["episode_transcript"])
+    podcast_info = json.loads(
+        get_podcast_info.call(podcast_details["episode_transcript"])
+    )
+    artist_details = get_artist_profiles(podcast_info["artists_discussed"])
     output["podcast_details"] = podcast_details
-    output["podcast_info"] = podcast_info
+    output["podcast_summary"] = podcast_info["summary"]
+    output["host_name"] = podcast_info["host_name"]
+    output["date_published"] = podcast_info["date_published"]
+    output["guests"] = podcast_info["guests"]
+    output["artists_discussed"] = podcast_info["artists_discussed"]
+    output["commentary"] = podcast_info["commentary"]
+    output["tone"] = podcast_info["tone"]
+    output["highlights"] = podcast_info["highlights"]
+    output["artist_details"] = artist_details
+
     return output
 
 
 @stub.local_entrypoint()
 def test_method(url, path):
-    output = {}
-    podcast_details = get_transcribe_podcast.call(url, path)
-    print(
-        "Podcast Info: ", get_podcast_info.call(podcast_details["episode_transcript"])
-    )
+    podcast_details = process_podcast.call(url, path)
+    print("Podcast Details: ", podcast_details)
