@@ -68,6 +68,12 @@ def main():
 
     button_clicked = st.sidebar.button("Let's go!!!!!")
 
+    if not rss_link and not button_clicked:
+        st.markdown(
+            f'<span style="font-size:24px">**👈 Please use the sidebar to interact with the app!**</span>',
+            unsafe_allow_html=True,
+        )
+
     # If the button hasn't been clicked, display the note
     if not button_clicked:
         st.sidebar.markdown(
